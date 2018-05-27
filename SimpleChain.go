@@ -158,7 +158,7 @@ func main() {
 
 	go func() {
 		t := time.Now()
-		genesisBlock := Block{0, t.String(), "Created by Victor Nelin", "", ""}
+		genesisBlock := Block{0, t.String(), "Created by Victor Nelin.", "", ""}
 		//spew.Dump(genesisBlock)
 		Blockchain = append(Blockchain, genesisBlock)
 		log.Printf("%+v", "Genesis block was created\n")
