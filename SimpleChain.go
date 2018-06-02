@@ -111,7 +111,9 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 
 // Message is separate structure only for Json requestes
 type Message struct {
+	Type string // sys or data
 	Data string
+	//lastBlockinfo
 }
 
 //POST handler WriteBlockchain
@@ -124,7 +126,7 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-
+	//log.Printf("%+v", m.Version)
 	newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data)
 	if err != nil {
 		respondWithJSON(w, r, http.StatusInternalServerError, m)
