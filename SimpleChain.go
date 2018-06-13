@@ -111,8 +111,9 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 
 // Message is separate structure only for Json requestes
 type Message struct {
-	Type string // sys or data
-	Data string
+	Type      string // sys or data
+	lastBlock Block
+	Data      string
 	//lastBlockinfo
 }
 
@@ -127,19 +128,23 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	//log.Printf("%+v", m.Version)
-	newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data)
-	if err != nil {
-		respondWithJSON(w, r, http.StatusInternalServerError, m)
-		return
-	}
-	if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
-		newBlockchain := append(Blockchain, newBlock)
-		replaceChain(newBlockchain)
+	if m.Type == "data" {
 
-		//spew.Dump(Blockchain)
-	}
+		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data)
+		if err != nil {
+			respondWithJSON(w, r, http.StatusInternalServerError, m)
+			return
+		}
+		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
+			newBlockchain := append(Blockchain, newBlock)
+			replaceChain(newBlockchain)
 
-	respondWithJSON(w, r, http.StatusCreated, newBlock)
+			//spew.Dump(Blockchain)
+		}
+		respondWithJSON(w, r, http.StatusCreated, newBlock)
+	} else {
+		//
+	}
 
 }
 
