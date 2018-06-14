@@ -109,7 +109,7 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(bytes))
 }
 
-// Message is separate structure only for Json requestes
+// Message. Separated structure is only for Json requestes
 type Message struct {
 	Type      string // sys or data
 	lastBlock Block
@@ -143,7 +143,7 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 		}
 		respondWithJSON(w, r, http.StatusCreated, newBlock)
 	} else {
-		//
+		log.Printf("%+v", m.Type)
 	}
 
 }
