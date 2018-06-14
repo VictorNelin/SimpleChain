@@ -111,9 +111,9 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 
 // Message. Separated structure is only for Json requestes
 type Message struct {
-	Type      string // sys or data
-	lastBlock Block
-	Data      string
+	Type string // sys or data
+
+	Data string
 	//lastBlockinfo
 }
 
