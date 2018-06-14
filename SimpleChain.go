@@ -48,6 +48,29 @@ func generateBlock(oldBlock Block, data string) (Block, error) {
 	return newBlock, nil
 }
 
+/*
+type syncNode interface {
+
+	reqLastBlockNumber
+	sendLastBlockNumber
+	reqBlock
+	sendBlock
+	addBlock
+
+
+}
+*/
+
+func addBlock(newBlock Block) bool {
+	lastBlock := Blockchain[len(Blockchain)-1]
+	if isBlockValid(newBlock, lastBlock) {
+		newBlockchain := append(Blockchain, newBlock)
+		replaceChain(newBlockchain)
+
+	}
+	return false
+}
+
 //Consensus
 
 func isBlockValid(newBlock, oldBlock Block) bool {
@@ -66,7 +89,6 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 	fmt.Printf("%+v", newBlock)
 	return true
 }
-
 func replaceChain(newBlocks []Block) {
 	if len(newBlocks) > len(Blockchain) {
 		Blockchain = newBlocks
@@ -109,12 +131,13 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(bytes))
 }
 
-// Message. Separated structure is only for Json requestes
+//Message is a  separated structure. It is only for Json requestes
 type Message struct {
-	Type string // sys or data
-
-	Data string
+	Type     string // sys or data
+	ActBlock string `json:"ActBlock"`
+	Data     string
 	//lastBlockinfo
+
 }
 
 //POST handler WriteBlockchain
@@ -135,15 +158,15 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 			respondWithJSON(w, r, http.StatusInternalServerError, m)
 			return
 		}
-		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
-			newBlockchain := append(Blockchain, newBlock)
-			replaceChain(newBlockchain)
 
-			//spew.Dump(Blockchain)
+		if addBlock(newBlock) {
+			// send a block to other nodes
 		}
+
 		respondWithJSON(w, r, http.StatusCreated, newBlock)
 	} else {
 		log.Printf("%+v", m.Type)
+
 	}
 
 }
