@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,10 +11,75 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 	//"github.com/davecgh/go-spew/spew"
 	"github.com/gorilla/mux"
 )
+
+// Scan input
+
+/* type syncNode interface {
+
+	reqLastBlockNumber () error
+	sendLastBlockNumber () error
+	reqBlock (int) error
+	sendBlock (int) error
+
+
+
+} */
+
+type Node struct {
+	nodeName string
+	pubKey   *rsa.PublicKey
+}
+
+var nodeList []Node // do not forget to add genesis node
+
+func addNode(newNode Node) bool {
+	for i := 0; i != len(nodeList); {
+		if newNode.nodeName != nodeList[i].nodeName {
+			i++
+		} else {
+			fmt.Println("Node has been already added " + newNode.nodeName + "\n")
+			return true
+		}
+
+	}
+	nodeList = append(nodeList, newNode)
+	fmt.Println("Node added: " + newNode.nodeName + "\n")
+	//log.Printf("%+v", newNode)
+	return true
+}
+
+func GenPairs() bool {
+	var N Node
+	//Setting Up a node
+	reader := bufio.NewReader(os.Stdin)
+	// Prompt and read
+	fmt.Print("Enter Node ID: ")
+	N.nodeName, _ = reader.ReadString('\n')
+
+	nodePrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
+
+	if err != nil {
+		fmt.Println(err.Error)
+		return false
+	}
+
+	N.pubKey = &nodePrivKey.PublicKey
+
+	fmt.Println("Private Key : ", nodePrivKey)
+	fmt.Println("Public key ", N.pubKey)
+
+	res := addNode(N)
+	if res != true {
+		fmt.Println("Could not add Node")
+	}
+
+	return true
+}
 
 // Block structure
 type Block struct {
@@ -47,19 +115,6 @@ func generateBlock(oldBlock Block, data string) (Block, error) {
 
 	return newBlock, nil
 }
-
-/*
-type syncNode interface {
-
-	reqLastBlockNumber
-	sendLastBlockNumber
-	reqBlock
-	sendBlock
-	addBlock
-
-
-}
-*/
 
 func addBlock(newBlock Block) bool {
 	lastBlock := Blockchain[len(Blockchain)-1]
@@ -133,9 +188,11 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 
 //Message is a  separated structure. It is only for Json requestes
 type Message struct {
-	Type     string // sys or data
-	ActBlock string `json:"ActBlock"`
-	Data     string
+	Type       string // Node or Data
+	Data       string
+	NodeName   string
+	NodePubKey rsa.PublicKey //FUCKING SHIT
+
 	//lastBlockinfo
 
 }
@@ -151,7 +208,8 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	//log.Printf("%+v", m.Version)
-	if m.Type == "data" {
+	switch m.Type {
+	case "Data":
 
 		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data)
 		if err != nil {
@@ -164,9 +222,15 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 		}
 
 		respondWithJSON(w, r, http.StatusCreated, newBlock)
-	} else {
-		log.Printf("%+v", m.Type)
+	case "Node":
+		var newNode Node
+		newNode.nodeName = m.NodeName
+		newNode.pubKey = &m.NodePubKey
+		addNode(newNode)
+		respondWithJSON(w, r, http.StatusCreated, newNode)
 
+	default:
+		log.Printf("%+v", m.Type)
 	}
 
 }
@@ -185,6 +249,11 @@ func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload i
 func main() {
 
 	//dataJson := "test_data"
+	if GenPairs() != true {
+
+		fmt.Println("Node couldn't intilize")
+
+	}
 
 	go func() {
 		t := time.Now()
