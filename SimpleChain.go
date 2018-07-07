@@ -223,7 +223,7 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	var newBlock Block
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&m); err != nil {
-		//respondWithJSON(w, r, http.StatusBadRequest, r.Body)
+		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
 		return
 	}
 	defer r.Body.Close()
@@ -232,13 +232,13 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	case "Client":
 		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data, m.BlockData.PubKey)
 		if err != nil {
-			//respondWithJSON(w, r, http.StatusInternalServerError, m)
+			respondWithJSON(w, r, http.StatusInternalServerError, m)
 			return
 		}
 
 		if addBlock(newBlock) {
 			// send a block to other nodes
-			//respondWithJSON(w, r, http.StatusCreated, newBlock)
+			respondWithJSON(w, r, http.StatusCreated, newBlock)
 		}
 	case "Noda":
 		newBlock.Index = m.BlockData.Index
