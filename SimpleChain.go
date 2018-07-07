@@ -1,19 +1,22 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"time"
 	//"github.com/davecgh/go-spew/spew"
+	"strconv"
+
 	"github.com/gorilla/mux"
 )
 
@@ -29,62 +32,76 @@ import (
 
 
 } */
-
-type Node struct {
-	nodeName string
-	pubKey   *rsa.PublicKey
+func genRsaKeyPair() (*rsa.PrivateKey, *rsa.PublicKey) {
+	privkey, _ := rsa.GenerateKey(rand.Reader, 4096)
+	return privkey, &privkey.PublicKey
 }
 
-var nodeList []Node // do not forget to add genesis node
+func privKeyToStr(privkey *rsa.PrivateKey) string {
+	privkeyBytes := x509.MarshalPKCS1PrivateKey(privkey)
+	privkeyPem := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: privkeyBytes,
+		},
+	)
+	return string(privkeyPem)
+}
 
-func addNode(newNode Node) bool {
-	for i := 0; i != len(nodeList); {
-		if newNode.nodeName != nodeList[i].nodeName {
-			i++
-		} else {
-			fmt.Println("Node has been already added " + newNode.nodeName + "\n")
-			return true
-		}
-
+func strToPrivKey(privPEM string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(privPEM))
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block containing the key")
 	}
-	nodeList = append(nodeList, newNode)
-	fmt.Println("Node added: " + newNode.nodeName + "\n")
-	//log.Printf("%+v", newNode)
-	return true
-}
 
-func GenPairs() bool {
-	var N Node
-	//Setting Up a node
-	reader := bufio.NewReader(os.Stdin)
-	// Prompt and read
-	fmt.Print("Enter Node ID: ")
-	N.nodeName, _ = reader.ReadString('\n')
-
-	nodePrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
-
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		fmt.Println(err.Error)
-		return false
+		return nil, err
 	}
 
-	N.pubKey = &nodePrivKey.PublicKey
+	return priv, nil
+}
 
-	fmt.Println("Private Key : ", nodePrivKey)
-	fmt.Println("Public key ", N.pubKey)
+func pubKeyToStr(pubkey *rsa.PublicKey) (string, error) {
+	pubkeyBytes, err := x509.MarshalPKIXPublicKey(pubkey)
+	if err != nil {
+		return "", err
+	}
+	pubkeyPem := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "RSA PUBLIC KEY",
+			Bytes: pubkeyBytes,
+		},
+	)
 
-	res := addNode(N)
-	if res != true {
-		fmt.Println("Could not add Node")
+	return string(pubkeyPem), nil
+}
+
+func strToPubKey(pubPEM string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pubPEM))
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block containing the key")
 	}
 
-	return true
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	switch pub := pub.(type) {
+	case *rsa.PublicKey:
+		return pub, nil
+	default:
+		break // fall through
+	}
+	return nil, errors.New("Key type is not RSA")
 }
 
 // Block structure
 type Block struct {
 	Index     int
 	Timestamp string
+	PubKey    string
 	Data      string
 	Hash      string
 	PrevHash  string
@@ -93,15 +110,22 @@ type Block struct {
 // Blockchain is a slice of structure
 var Blockchain []Block
 
+type Message struct {
+	Type      string // Client or Noda
+	Data      string
+	BlockData Block
+}
+
 func calculateHash(block Block) string {
-	record := string(block.Index) + block.Timestamp + string(block.Data) + block.PrevHash
+
+	record := string(block.Index) + block.Timestamp + block.PubKey + string(block.Data) + block.PrevHash
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
 	return hex.EncodeToString(hashed)
 }
 
-func generateBlock(oldBlock Block, data string) (Block, error) {
+func generateBlock(oldBlock Block, data, pubKey string) (Block, error) {
 
 	var newBlock Block
 
@@ -110,6 +134,7 @@ func generateBlock(oldBlock Block, data string) (Block, error) {
 	newBlock.Index = oldBlock.Index + 1
 	newBlock.Timestamp = t.String()
 	newBlock.Data = data
+	newBlock.PubKey = pubKey
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Hash = calculateHash(newBlock)
 
@@ -122,6 +147,9 @@ func addBlock(newBlock Block) bool {
 		newBlockchain := append(Blockchain, newBlock)
 		replaceChain(newBlockchain)
 
+	} else {
+		log.Println("A New block №" + strconv.Itoa(newBlock.Index) + " is NOT valid \n")
+
 	}
 	return false
 }
@@ -130,6 +158,7 @@ func addBlock(newBlock Block) bool {
 
 func isBlockValid(newBlock, oldBlock Block) bool {
 	if oldBlock.Index+1 != newBlock.Index {
+
 		return false
 	}
 
@@ -176,7 +205,7 @@ func run() error {
 	return nil
 }
 
-// GET Handler getBlockchain
+// GET Handler getBlockchain (browse at url://127.0.0.1:8080)
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	bytes, err := json.MarshalIndent(Blockchain, "", "  ")
 	if err != nil {
@@ -187,52 +216,44 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 }
 
 //Message is a  separated structure. It is only for Json requestes
-type Message struct {
-	Type       string // Node or Data
-	Data       string
-	NodeName   string
-	NodePubKey rsa.PublicKey //FUCKING SHIT
-
-	//lastBlockinfo
-
-}
 
 //POST handler WriteBlockchain
 func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	var m Message
-
+	var newBlock Block
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&m); err != nil {
-		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
+		//respondWithJSON(w, r, http.StatusBadRequest, r.Body)
 		return
 	}
 	defer r.Body.Close()
 	//log.Printf("%+v", m.Version)
 	switch m.Type {
-	case "Data":
-
-		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data)
+	case "Client":
+		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data, m.BlockData.PubKey)
 		if err != nil {
-			respondWithJSON(w, r, http.StatusInternalServerError, m)
+			//respondWithJSON(w, r, http.StatusInternalServerError, m)
 			return
 		}
 
 		if addBlock(newBlock) {
 			// send a block to other nodes
+			//respondWithJSON(w, r, http.StatusCreated, newBlock)
+		}
+	case "Noda":
+		newBlock.Index = m.BlockData.Index
+		newBlock.Timestamp = m.BlockData.Timestamp
+		newBlock.Data = m.BlockData.Data
+		newBlock.PubKey = m.BlockData.PubKey
+		newBlock.PrevHash = m.BlockData.PrevHash
+		newBlock.Hash = m.BlockData.Hash
+		if addBlock(newBlock) {
+			// send a block to other nodes
+			respondWithJSON(w, r, http.StatusCreated, newBlock)
 		}
 
-		respondWithJSON(w, r, http.StatusCreated, newBlock)
-	case "Node":
-		var newNode Node
-		newNode.nodeName = m.NodeName
-		newNode.pubKey = &m.NodePubKey
-		addNode(newNode)
-		respondWithJSON(w, r, http.StatusCreated, newNode)
-
-	default:
-		log.Printf("%+v", m.Type)
 	}
-
+	//log.Printf("%+v", m)
 }
 
 func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload interface{}) {
@@ -247,17 +268,11 @@ func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload i
 }
 
 func main() {
-
-	//dataJson := "test_data"
-	if GenPairs() != true {
-
-		fmt.Println("Node couldn't intilize")
-
-	}
-
+	_, pub := genRsaKeyPair()
+	StrPub, _ := pubKeyToStr(pub)
 	go func() {
 		t := time.Now()
-		genesisBlock := Block{0, t.String(), "Created by Victor Nelin.", "", ""}
+		genesisBlock := Block{0, t.String(), StrPub, "Created by Victor Nelin.", "1", ""}
 		//spew.Dump(genesisBlock)
 		Blockchain = append(Blockchain, genesisBlock)
 		log.Printf("%+v", "Genesis block was created\n")
