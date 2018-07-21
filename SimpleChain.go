@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -12,7 +13,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"time"
 	//"github.com/davecgh/go-spew/spew"
 	"strconv"
@@ -20,18 +23,148 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Scan input
+func bytesToString(data []byte) string {
+	return string(data[:])
+}
+func removeDuplicates(elements []string) []string {
 
-/* type syncNode interface {
+	encountered := map[string]bool{}
+	result := []string{}
+	for v := range elements {
+		if encountered[elements[v]] == true {
+		} else {
+			encountered[elements[v]] = true
+			result = append(result, elements[v])
+		}
+	}
+	return result
+}
 
-	reqLastBlockNumber () error
-	sendLastBlockNumber () error
-	reqBlock (int) error
-	sendBlock (int) error
+var nodeList []string
 
+func addNode(newNode string) bool {
+	//MyNode := "127.0.0.1:8081"
 
+	for _, enlistNode := range nodeList {
+		if enlistNode == newNode {
+			fmt.Println("Warning: " + newNode + " is enlisted already")
+			return false
+		}
 
-} */
+	}
+	nodeList = removeDuplicates(append(nodeList, newNode))
+	fmt.Println("Success: " + newNode + " added")
+	return true
+}
+func addListNodes(newNodeList []string) []string {
+	return removeDuplicates(append(nodeList, newNodeList...))
+}
+
+//Fix hadler
+func annonceBlock(newBlock Block) {
+
+	msgJSON := Message{
+		Type: "Noda",
+		Data: newBlock.Data,
+		BlockData: Block{
+			Index:     newBlock.Index,
+			Timestamp: newBlock.Timestamp,
+			PubKey:    newBlock.PubKey,
+			Data:      newBlock.Data,
+			Hash:      newBlock.Hash,
+			PrevHash:  newBlock.PrevHash,
+		},
+		NodeAddr: nil,
+	}
+	encMsgJSON, _ := json.Marshal(msgJSON)
+	for _, enlistNode := range removeDuplicates(nodeList) {
+		fmt.Println("Sending Block to: " + enlistNode)
+		req, _ := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON))
+		req.Header.Set("Content-Type", "application/json")
+	}
+}
+func syncPeers() {
+
+	var msg Message
+	msg.Type = "Bootstrap"
+	msg.Data = "SyncPeers"
+	msg.NodeAddr = nodeList
+
+	encMsgJSON, _ := json.Marshal(msg)
+
+	for _, enlistNode := range removeDuplicates(nodeList) {
+		fmt.Println("Sending Block to: " + enlistNode)
+		fmt.Println(enlistNode)
+		if req, err := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON)); err != nil {
+			req.Header.Set("Content-Type", "application/json")
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				//log.Fatal(err)
+				fmt.Println(err)
+			}
+			decoder := json.NewDecoder(resp.Body)
+			err = decoder.Decode(&msg)
+
+			nodeList = addListNodes(msg.NodeAddr)
+			fmt.Println(msg.NodeAddr)
+			fmt.Println(nodeList)
+			//body, err := ioutil.ReadAll(resp.Body)
+			//nodeList = removeDuplicates(append(nodeList, bytesToString(body)))
+			//fmt.Println("Response: ", string(body))
+			resp.Body.Close()
+		}
+
+	}
+
+}
+
+//Add Handler
+func backgrAnnonceList() string {
+
+	msgJSON := Message{
+		Type: "Bootstrap",
+		Data: "SyncPeers",
+		BlockData: Block{
+			Index:     -1,
+			Timestamp: "",
+			PubKey:    "",
+			Data:      "",
+			Hash:      "",
+			PrevHash:  "",
+		},
+		NodeAddr: nodeList,
+	}
+	encMsgJSON, _ := json.Marshal(msgJSON)
+
+	ticker := time.NewTicker(time.Second * 5)
+
+	for t := range ticker.C {
+		fmt.Println("Tick at", t)
+		for _, enlistNode := range removeDuplicates(nodeList) {
+			fmt.Println("Sending to Enlisted Node: " + enlistNode)
+			req, _ := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON))
+			req.Header.Set("Content-Type", "application/json")
+			/* client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				//log.Fatal(err)
+				fmt.Println(err)
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			nodeList = removeDuplicates(append(nodeList, string(body)))
+			fmt.Println("Response: ", string(body))
+			resp.Body.Close() */
+		}
+
+	}
+	time.Sleep(time.Second * 50)
+	ticker.Stop()
+	fmt.Println("Ticker stopped")
+	return string(len(nodeList)) + "Nodes is sended"
+
+}
+
 func genRsaKeyPair() (*rsa.PrivateKey, *rsa.PublicKey) {
 	privkey, _ := rsa.GenerateKey(rand.Reader, 4096)
 	return privkey, &privkey.PublicKey
@@ -114,6 +247,7 @@ type Message struct {
 	Type      string // Client or Noda
 	Data      string
 	BlockData Block
+	NodeAddr  []string
 }
 
 func calculateHash(block Block) string {
@@ -146,11 +280,10 @@ func addBlock(newBlock Block) bool {
 	if isBlockValid(newBlock, lastBlock) {
 		newBlockchain := append(Blockchain, newBlock)
 		replaceChain(newBlockchain)
-
-	} else {
-		log.Println("A New block №" + strconv.Itoa(newBlock.Index) + " is NOT valid \n")
-
+		return true
 	}
+	log.Println("A New block №" + strconv.Itoa(newBlock.Index) + " is NOT valid \n")
+
 	return false
 }
 
@@ -181,7 +314,7 @@ func replaceChain(newBlocks []Block) {
 
 }
 
-//create web
+//Create web-Server
 
 func run() error {
 	mux := mux.NewRouter()
@@ -190,7 +323,7 @@ func run() error {
 
 	s := &http.Server{
 		Handler:        mux,
-		Addr:           "127.0.0.1:8080",
+		Addr:           "192.168.100.2:8080",
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
@@ -212,6 +345,8 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	fmt.Println("Client's IP is:" + r.RemoteAddr)
+	addNode(r.RemoteAddr) //just for test
 	io.WriteString(w, string(bytes))
 }
 
@@ -223,11 +358,14 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	var newBlock Block
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&m); err != nil {
+
 		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
 		return
 	}
+
 	defer r.Body.Close()
 	//log.Printf("%+v", m.Version)
+
 	switch m.Type {
 	case "Client":
 		newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.Data, m.BlockData.PubKey)
@@ -235,21 +373,34 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 			respondWithJSON(w, r, http.StatusInternalServerError, m)
 			return
 		}
-
-		if addBlock(newBlock) {
-			// send a block to other nodes
-			respondWithJSON(w, r, http.StatusCreated, newBlock)
-		}
+		addNode(r.RemoteAddr)
+		addBlock(newBlock)
+		respondWithJSON(w, r, http.StatusCreated, newBlock)
 	case "Noda":
 		newBlock.Index = m.BlockData.Index
 		newBlock.Timestamp = m.BlockData.Timestamp
-		newBlock.Data = m.BlockData.Data
 		newBlock.PubKey = m.BlockData.PubKey
-		newBlock.PrevHash = m.BlockData.PrevHash
+		newBlock.Data = m.BlockData.Data
 		newBlock.Hash = m.BlockData.Hash
-		if addBlock(newBlock) {
-			// send a block to other nodes
-			respondWithJSON(w, r, http.StatusCreated, newBlock)
+		newBlock.PrevHash = m.BlockData.PrevHash
+
+		if addBlock(newBlock) != false {
+			annonceBlock(newBlock)
+		}
+		addNode(r.RemoteAddr)
+		respondWithJSON(w, r, http.StatusCreated, newBlock)
+
+	case "Bootstrap":
+		// append or merge newlist to existing
+		switch m.Data {
+		case "SyncPeers":
+			addNode(r.RemoteAddr)
+
+			nodeList = addListNodes(m.NodeAddr)
+			m.NodeAddr = nodeList
+
+			respondWithJSON(w, r, http.StatusCreated, m)
+
 		}
 
 	}
@@ -263,6 +414,7 @@ func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload i
 		w.Write([]byte("HTTP 500: Internal Server Error"))
 		return
 	}
+
 	w.WriteHeader(code)
 	w.Write(response)
 }
@@ -270,6 +422,7 @@ func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload i
 func main() {
 	_, pub := genRsaKeyPair()
 	StrPub, _ := pubKeyToStr(pub)
+
 	go func() {
 		t := time.Now()
 		genesisBlock := Block{0, t.String(), StrPub, "Created by Victor Nelin.", "1", ""}
@@ -279,7 +432,26 @@ func main() {
 		log.Printf("%+v", genesisBlock)
 
 	}()
+	go func() {
+		host, _ := os.Hostname()
+		addrs, _ := net.LookupIP(host)
+		for _, addr := range addrs {
+			if ipv4 := addr.To4(); ipv4 != nil {
+
+				if addNode(ipv4.String()+":8080") == true {
+					addNode("192.168.100.2:8080")
+
+				}
+
+			}
+		}
+		syncPeers()
+		//fmt.Println(backgrAnnonceList())
+
+	}()
+
 	log.Fatal(run())
+
 }
 
 //fmt.Println(input)

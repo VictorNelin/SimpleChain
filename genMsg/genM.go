@@ -9,13 +9,28 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
 	//"github.com/davecgh/go-spew/spew"
-	"strconv"
 )
+
+func bytesToString(data []byte) string {
+	return string(data[:])
+}
+func removeDuplicates(elements []string) []string {
+
+	encountered := map[string]bool{}
+	result := []string{}
+	for v := range elements {
+		if encountered[elements[v]] == true {
+		} else {
+			encountered[elements[v]] = true
+			result = append(result, elements[v])
+		}
+	}
+	return result
+}
 
 // Block structure
 type Block struct {
@@ -31,6 +46,7 @@ type Message struct {
 	Type      string // Client or Noda
 	Data      string
 	BlockData Block
+	NodeAddr  []string
 }
 
 func genRsaKeyPair() (*rsa.PrivateKey, *rsa.PublicKey) {
@@ -106,36 +122,36 @@ func main() {
 	msg, _ := reader.ReadString('\n') */
 
 	// Create the keys
-	_, pub := genRsaKeyPair()
-	strPubKey, _ := pubKeyToStr(pub)
+	/* 	_, pub := genRsaKeyPair()*/
+	/* strPubKey, _ := pubKeyToStr(pub) */
 	//gen rnd json
-
+	var nodeList []string
+	nodeList = append(nodeList, "2.2.2.2:8080")
+	nodeList = append(nodeList, "2.2.2.2:8082")
 	ticker := time.NewTicker(time.Second * 5)
 	go func() {
+
 		i := 1
 		for t := range ticker.C {
 			fmt.Println("Tick at", t)
-			tn := time.Now()
+			/* tn := time.Now() */
 			i++
 			msgJSON := Message{
-				Type: "Client",
-				Data: "client Data" + strconv.Itoa(i),
+				Type: "Bootstrap",
+				Data: "SyncPeers",
 				BlockData: Block{
-					Index:     i,
-					Timestamp: tn.String(),
-					PubKey:    strPubKey,
-					Data:      "Block data" + strconv.Itoa(i),
+					Index:     -1,
+					Timestamp: "",
+					PubKey:    "",
+					Data:      "",
 					Hash:      "",
 					PrevHash:  "",
 				},
+				NodeAddr: nodeList,
 			}
 
 			encMsgJSON, err := json.Marshal(msgJSON)
-			fmt.Println(string(encMsgJSON))
-
-			/* if err != nil {
-				fmt.Fprintf(w, "Error: %s", err)
-			} */
+			//fmt.Println(string(encMsgJSON))
 
 			//send
 			req, err := http.NewRequest("POST", "http://127.0.0.1:8080", bytes.NewBuffer(encMsgJSON))
@@ -143,11 +159,19 @@ func main() {
 			client := &http.Client{}
 			resp, err := client.Do(req)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
-			body, err := ioutil.ReadAll(resp.Body)
-			fmt.Println("Response: ", string(body))
-			resp.Body.Close()
+			var m Message
+			defer resp.Body.Close()
+			decoder := json.NewDecoder(resp.Body)
+			err = decoder.Decode(&m)
+
+			nodeList = removeDuplicates(append(nodeList, m.NodeAddr...))
+
+			//body, err := ioutil.ReadAll(resp.Body)
+			//fmt.Println("Response: ", string(body))
+			fmt.Println(nodeList)
+
 		}
 
 	}()
