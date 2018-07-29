@@ -20,6 +20,7 @@ import (
 	//"github.com/davecgh/go-spew/spew"
 	"strconv"
 
+	"github.com/franela/goreq"
 	"github.com/gorilla/mux"
 )
 
@@ -39,21 +40,28 @@ func removeDuplicates(elements []string) []string {
 	}
 	return result
 }
+func cutSlice(inputSlice []string, delElem string) []string {
+	for i, v := range inputSlice {
+		if v == delElem {
+			return append(inputSlice[:i], inputSlice[i+1:]...)
+		}
+	}
+	return inputSlice
+}
 
 var nodeList []string
 
 func addNode(newNode string) bool {
-	//MyNode := "127.0.0.1:8081"
 
 	for _, enlistNode := range nodeList {
 		if enlistNode == newNode {
-			fmt.Println("Warning: " + newNode + " is enlisted already")
+			log.Println("Warning: " + newNode + " is enlisted already")
 			return false
 		}
 
 	}
 	nodeList = removeDuplicates(append(nodeList, newNode))
-	fmt.Println("Success: " + newNode + " added")
+	log.Println("Success: " + newNode + " added")
 	return true
 }
 func addListNodes(newNodeList []string) []string {
@@ -83,57 +91,92 @@ func annonceBlock(newBlock Block) {
 	}
 }
 
-func reqNodeList() {
+func getAliveNodes(checkNodeList []string) []string {
+
 	var msg Message
+	msg.Type = "Alive"
+	availableNodes := checkNodeList
+	for _, enlistNode := range removeDuplicates(checkNodeList) {
+		if enlistNode != nodeIP {
+			goreq.SetConnectTimeout(100 * time.Millisecond)
+			res, err := goreq.Request{
+				Method:  "POST",
+				Uri:     "http://" + enlistNode,
+				Timeout: 90 * time.Millisecond,
+				Body:    msg,
+			}.Do()
+			if err != nil {
+				//Cut a dead Node from a Node list
+				log.Println("Node : " + enlistNode + " is dead and would be deleted from a Alive Node list.")
+				availableNodes = cutSlice(availableNodes, enlistNode)
+				break
 
+			}
+
+			var recivedM Message
+			if err := res.Body.FromJsonTo(&recivedM); err != nil {
+				availableNodes = cutSlice(availableNodes, enlistNode)
+				fmt.Println(err)
+			}
+			if recivedM.Data != "True" {
+				log.Println("Node : " + enlistNode + " is not response correct to Alive request and would be deleted from a Alive Node list.")
+				availableNodes = cutSlice(availableNodes, enlistNode)
+			}
+
+			/* log.Println("Answer from: ", enlistNode, ". ", recivedM.NodeAddr)
+			nodeList = addListNodes(recivedM.NodeAddr) */
+		}
+	}
+
+	return availableNodes
+}
+
+func reqNodeList(reqList []string) {
+	//Fulfilling a Message to request with an availiable nodelist
+	var msg Message
 	msg.Type = "Bootstrap"
+	msg.NodeAddr = reqList
+	//Try to send a request to all enlisted Nodes
+	for _, enlistNode := range removeDuplicates(reqList) {
+		if enlistNode != nodeIP {
+			goreq.SetConnectTimeout(100 * time.Millisecond)
+			res, err := goreq.Request{
+				Method:  "POST",
+				Uri:     "http://" + enlistNode,
+				Timeout: 90 * time.Millisecond,
+				Body:    msg,
+			}.Do()
+			if err != nil {
+				//Cut a dead Node from a Node list
+				log.Println("Host: " + enlistNode + " is not responding and would be deleted from a Node list.")
+				reqList = getAliveNodes(cutSlice(reqList, enlistNode))
+				break
+			}
 
-	encMsgJSON, _ := json.Marshal(msg)
-
-	fmt.Println(string(encMsgJSON))
-
-	for _, enlistNode := range removeDuplicates(nodeList) {
-		fmt.Println("Request a List from: " + enlistNode)
-		//fmt.Println(enlistNode)
-		req, err := http.NewRequest("POST", "http://"+enlistNode, bytes.NewReader(encMsgJSON))
-		if err != nil {
-			log.Panicln(err)
+			var recivedM Message
+			if err := res.Body.FromJsonTo(&recivedM); err != nil {
+				reqList = getAliveNodes(cutSlice(reqList, enlistNode))
+				fmt.Println(err)
+			}
+			log.Println("Answer from: ", enlistNode, ". ", recivedM.NodeAddr)
+			nodeList = addListNodes(recivedM.NodeAddr)
 		}
-		//req, err := http.NewRequest("POST", "http://192.168.100.2:8080", bytes.NewBuffer(encMsgJSON))
-		req.Header.Set("Content-Type", "application/json")
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Println(err)
-		}
-		var m Message
-		defer resp.Body.Close()
-		decoder := json.NewDecoder(resp.Body)
-
-		err = decoder.Decode(&m)
-		fmt.Println(m.NodeAddr)
-
-		nodeList = addListNodes(m.NodeAddr)
-		fmt.Println(m.NodeAddr)
-		//fmt.Println(nodeList)
-
 	}
 
 }
 
-//Add Handler
 func reqNodeListSilent() {
 
 	ticker := time.NewTicker(time.Second * 5)
 
 	for t := range ticker.C {
-		fmt.Println("Tick at", t)
-		reqNodeList()
-
+		fmt.Println("Silent Node discovering", t)
+		reqNodeList(getAliveNodes(nodeList))
+		log.Println("Current node list: ", nodeList)
 	}
-	time.Sleep(time.Second * 500)
-	ticker.Stop()
-	fmt.Println("Ticker stopped")
+	time.Sleep(time.Second * 80000)
+	/* ticker.Stop()
+	fmt.Println("Ticker stopped") */
 
 }
 
@@ -287,7 +330,7 @@ var nodeIP string
 
 func run() error {
 	mux := mux.NewRouter()
-	log.Printf("%+v", "Simple Chain v.1.2\n")
+	log.Printf("%+v", "Simple Chain v.1.5a\n")
 
 	/* reader := bufio.NewReader(os.Stdin)
 	nodeIP, _ := reader.ReadString('')
@@ -365,15 +408,21 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 		respondWithJSON(w, r, http.StatusCreated, newBlock)
 
 	case "Bootstrap":
-		// append or merge newlist to existing
-		var bootstrapMsg Message
 
-		addNode(r.RemoteAddr)
+		log.Println("Responding to: " + r.RemoteAddr)
+		var respMsg Message
+		respMsg.NodeAddr = nodeList
 
-		//nodeList = addListNodes(m.NodeAddr)
-		bootstrapMsg.NodeAddr = nodeList
+		nodeList = addListNodes(m.NodeAddr)
+		log.Println("Nodes has been recieved : ", m.NodeAddr)
+		respondWithJSON(w, r, http.StatusCreated, respMsg)
 
-		respondWithJSON(w, r, http.StatusCreated, bootstrapMsg)
+	case "Alive":
+
+		log.Println("Responding Alive to: " + r.RemoteAddr)
+		var respMsg Message
+		respMsg.Data = "True"
+		respondWithJSON(w, r, http.StatusCreated, respMsg)
 
 	}
 	//log.Printf("%+v", m)
@@ -407,20 +456,23 @@ func main() {
 
 	}()
 	go func() {
+		//Bootstrap Nodes
+		addNode(nodeIP)
+		addNode("192.168.100.2:8080")
+		//Discovering an interfaces
 		host, _ := os.Hostname()
 		addrs, _ := net.LookupIP(host)
 		for _, addr := range addrs {
 			if ipv4 := addr.To4(); ipv4 != nil {
 
-				if addNode(ipv4.String()+":8080") == true {
-					addNode("192.168.100.8:8080")
-
+				if addNode(ipv4.String()+":8080") != true {
+					log.Println("Can't add a Node to a List: " + ipv4.String())
 				}
-
 			}
 		}
+
+		//Run a Silence discovery
 		reqNodeListSilent()
-		//fmt.Println(backgrAnnonceList())
 
 	}()
 	log.Fatal(run())

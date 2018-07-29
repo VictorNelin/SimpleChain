@@ -138,6 +138,7 @@ func main() {
 			i++
 
 			msg.Type = "Bootstrap"
+			msg.NodeAddr = nodeList
 
 			encMsgJSON, _ := json.Marshal(msg)
 
