@@ -130,31 +130,21 @@ func main() {
 	nodeList = append(nodeList, "2.2.2.2:8082")
 	ticker := time.NewTicker(time.Second * 5)
 	go func() {
-
+		var msg Message
 		i := 1
 		for t := range ticker.C {
 			fmt.Println("Tick at", t)
 			/* tn := time.Now() */
 			i++
-			msgJSON := Message{
-				Type: "Bootstrap",
-				Data: "SyncPeers",
-				BlockData: Block{
-					Index:     -1,
-					Timestamp: "",
-					PubKey:    "",
-					Data:      "",
-					Hash:      "",
-					PrevHash:  "",
-				},
-				NodeAddr: nodeList,
-			}
 
-			encMsgJSON, err := json.Marshal(msgJSON)
-			//fmt.Println(string(encMsgJSON))
+			msg.Type = "Bootstrap"
+
+			encMsgJSON, _ := json.Marshal(msg)
+
+			fmt.Println(string(encMsgJSON))
 
 			//send
-			req, err := http.NewRequest("POST", "http://172.16.213.128:8080", bytes.NewBuffer(encMsgJSON))
+			req, err := http.NewRequest("POST", "http://192.168.100.2:8080", bytes.NewBuffer(encMsgJSON))
 			req.Header.Set("Content-Type", "application/json")
 			client := &http.Client{}
 			resp, err := client.Do(req)
@@ -164,18 +154,19 @@ func main() {
 			var m Message
 			defer resp.Body.Close()
 			decoder := json.NewDecoder(resp.Body)
-			err = decoder.Decode(&m)
 
+			err = decoder.Decode(&m)
+			fmt.Println(m.NodeAddr)
 			nodeList = removeDuplicates(append(nodeList, m.NodeAddr...))
 
 			//body, err := ioutil.ReadAll(resp.Body)
 			//fmt.Println("Response: ", string(body))
-			fmt.Println(nodeList)
+			//fmt.Println(nodeList)
 
 		}
 
 	}()
-	time.Sleep(time.Second * 50)
+	time.Sleep(time.Second * 500)
 	ticker.Stop()
 	fmt.Println("Ticker stopped")
 

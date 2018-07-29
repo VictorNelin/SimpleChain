@@ -63,105 +63,77 @@ func addListNodes(newNodeList []string) []string {
 //Fix hadler
 func annonceBlock(newBlock Block) {
 
-	msgJSON := Message{
-		Type: "Noda",
-		Data: newBlock.Data,
-		BlockData: Block{
-			Index:     newBlock.Index,
-			Timestamp: newBlock.Timestamp,
-			PubKey:    newBlock.PubKey,
-			Data:      newBlock.Data,
-			Hash:      newBlock.Hash,
-			PrevHash:  newBlock.PrevHash,
-		},
-		NodeAddr: nil,
-	}
-	encMsgJSON, _ := json.Marshal(msgJSON)
+	var msg Message
+	msg.Type = "Noda"
+	msg.Data = newBlock.Data
+	msg.BlockData.Index = newBlock.Index
+	msg.BlockData.Timestamp = newBlock.Timestamp
+	msg.BlockData.PubKey = newBlock.PubKey
+	msg.BlockData.Data = newBlock.Data
+	msg.BlockData.Hash = newBlock.Hash
+	msg.BlockData.PrevHash = newBlock.PrevHash
+	msg.NodeAddr = nil
+
+	encMsgJSON, _ := json.Marshal(msg)
 	for _, enlistNode := range removeDuplicates(nodeList) {
 		fmt.Println("Sending Block to: " + enlistNode)
 		req, _ := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON))
 		req.Header.Set("Content-Type", "application/json")
+
 	}
 }
-func syncPeers() {
 
+func reqNodeList() {
 	var msg Message
+
 	msg.Type = "Bootstrap"
-	msg.Data = "SyncPeers"
-	msg.NodeAddr = nodeList
 
 	encMsgJSON, _ := json.Marshal(msg)
 
-	for _, enlistNode := range removeDuplicates(nodeList) {
-		fmt.Println("Sending Block to: " + enlistNode)
-		fmt.Println(enlistNode)
-		if req, err := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON)); err != nil {
-			req.Header.Set("Content-Type", "application/json")
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				//log.Fatal(err)
-				fmt.Println(err)
-			}
-			decoder := json.NewDecoder(resp.Body)
-			err = decoder.Decode(&msg)
+	fmt.Println(string(encMsgJSON))
 
-			nodeList = addListNodes(msg.NodeAddr)
-			fmt.Println(msg.NodeAddr)
-			fmt.Println(nodeList)
-			//body, err := ioutil.ReadAll(resp.Body)
-			//nodeList = removeDuplicates(append(nodeList, bytesToString(body)))
-			//fmt.Println("Response: ", string(body))
-			resp.Body.Close()
+	for _, enlistNode := range removeDuplicates(nodeList) {
+		fmt.Println("Request a List from: " + enlistNode)
+		//fmt.Println(enlistNode)
+		req, err := http.NewRequest("POST", "http://"+enlistNode, bytes.NewReader(encMsgJSON))
+		if err != nil {
+			log.Panicln(err)
 		}
+		//req, err := http.NewRequest("POST", "http://192.168.100.2:8080", bytes.NewBuffer(encMsgJSON))
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Println(err)
+		}
+		var m Message
+		defer resp.Body.Close()
+		decoder := json.NewDecoder(resp.Body)
+
+		err = decoder.Decode(&m)
+		fmt.Println(m.NodeAddr)
+
+		nodeList = addListNodes(m.NodeAddr)
+		fmt.Println(m.NodeAddr)
+		//fmt.Println(nodeList)
 
 	}
 
 }
 
 //Add Handler
-func backgrAnnonceList() string {
-
-	msgJSON := Message{
-		Type: "Bootstrap",
-		Data: "SyncPeers",
-		BlockData: Block{
-			Index:     -1,
-			Timestamp: "",
-			PubKey:    "",
-			Data:      "",
-			Hash:      "",
-			PrevHash:  "",
-		},
-		NodeAddr: nodeList,
-	}
-	encMsgJSON, _ := json.Marshal(msgJSON)
+func reqNodeListSilent() {
 
 	ticker := time.NewTicker(time.Second * 5)
 
 	for t := range ticker.C {
 		fmt.Println("Tick at", t)
-		for _, enlistNode := range removeDuplicates(nodeList) {
-			fmt.Println("Sending to Enlisted Node: " + enlistNode)
-			req, _ := http.NewRequest("POST", "http://"+enlistNode, bytes.NewBuffer(encMsgJSON))
-			req.Header.Set("Content-Type", "application/json")
-			/* client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				//log.Fatal(err)
-				fmt.Println(err)
-			}
-			body, err := ioutil.ReadAll(resp.Body)
-			nodeList = removeDuplicates(append(nodeList, string(body)))
-			fmt.Println("Response: ", string(body))
-			resp.Body.Close() */
-		}
+		reqNodeList()
 
 	}
-	time.Sleep(time.Second * 50)
+	time.Sleep(time.Second * 500)
 	ticker.Stop()
 	fmt.Println("Ticker stopped")
-	return string(len(nodeList)) + "Nodes is sended"
 
 }
 
@@ -169,7 +141,6 @@ func genRsaKeyPair() (*rsa.PrivateKey, *rsa.PublicKey) {
 	privkey, _ := rsa.GenerateKey(rand.Reader, 4096)
 	return privkey, &privkey.PublicKey
 }
-
 func privKeyToStr(privkey *rsa.PrivateKey) string {
 	privkeyBytes := x509.MarshalPKCS1PrivateKey(privkey)
 	privkeyPem := pem.EncodeToMemory(
@@ -180,7 +151,6 @@ func privKeyToStr(privkey *rsa.PrivateKey) string {
 	)
 	return string(privkeyPem)
 }
-
 func strToPrivKey(privPEM string) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(privPEM))
 	if block == nil {
@@ -194,7 +164,6 @@ func strToPrivKey(privPEM string) (*rsa.PrivateKey, error) {
 
 	return priv, nil
 }
-
 func pubKeyToStr(pubkey *rsa.PublicKey) (string, error) {
 	pubkeyBytes, err := x509.MarshalPKIXPublicKey(pubkey)
 	if err != nil {
@@ -209,7 +178,6 @@ func pubKeyToStr(pubkey *rsa.PublicKey) (string, error) {
 
 	return string(pubkeyPem), nil
 }
-
 func strToPubKey(pubPEM string) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode([]byte(pubPEM))
 	if block == nil {
@@ -290,8 +258,8 @@ func addBlock(newBlock Block) bool {
 //Consensus
 
 func isBlockValid(newBlock, oldBlock Block) bool {
-	if oldBlock.Index+1 != newBlock.Index {
-
+	if oldBlock.Index+1 > newBlock.Index {
+		// send a last block
 		return false
 	}
 
@@ -315,19 +283,24 @@ func replaceChain(newBlocks []Block) {
 }
 
 //Create web-Server
+var nodeIP string
 
 func run() error {
 	mux := mux.NewRouter()
-	log.Printf("%+v", "Simple Chain v.1.0\n")
-	log.Println("Listening on 127.0.0.1:8080")
+	log.Printf("%+v", "Simple Chain v.1.2\n")
+
+	/* reader := bufio.NewReader(os.Stdin)
+	nodeIP, _ := reader.ReadString('')
+	*/
 
 	s := &http.Server{
 		Handler:        mux,
-		Addr:           "192.168.100.2:8080",
+		Addr:           nodeIP,
 		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
+	log.Println("Listening on " + s.Addr)
 	mux.HandleFunc("/", handleGetBlockchain).Methods("GET")
 	mux.HandleFunc("/", handleWriteBlock).Methods("POST")
 
@@ -383,25 +356,24 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 		newBlock.Data = m.BlockData.Data
 		newBlock.Hash = m.BlockData.Hash
 		newBlock.PrevHash = m.BlockData.PrevHash
+		addNode(r.RemoteAddr)
 
 		if addBlock(newBlock) != false {
 			annonceBlock(newBlock)
 		}
-		addNode(r.RemoteAddr)
+
 		respondWithJSON(w, r, http.StatusCreated, newBlock)
 
 	case "Bootstrap":
 		// append or merge newlist to existing
-		switch m.Data {
-		case "SyncPeers":
-			addNode(r.RemoteAddr)
+		var bootstrapMsg Message
 
-			nodeList = addListNodes(m.NodeAddr)
-			m.NodeAddr = nodeList
+		addNode(r.RemoteAddr)
 
-			respondWithJSON(w, r, http.StatusCreated, m)
+		//nodeList = addListNodes(m.NodeAddr)
+		bootstrapMsg.NodeAddr = nodeList
 
-		}
+		respondWithJSON(w, r, http.StatusCreated, bootstrapMsg)
 
 	}
 	//log.Printf("%+v", m)
@@ -422,6 +394,8 @@ func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload i
 func main() {
 	_, pub := genRsaKeyPair()
 	StrPub, _ := pubKeyToStr(pub)
+	fmt.Print("Enter Node IP and port (IP:port): ")
+	fmt.Scanf("%s", &nodeIP)
 
 	go func() {
 		t := time.Now()
@@ -439,19 +413,17 @@ func main() {
 			if ipv4 := addr.To4(); ipv4 != nil {
 
 				if addNode(ipv4.String()+":8080") == true {
-					addNode("192.168.100.2:8080")
+					addNode("192.168.100.8:8080")
 
 				}
 
 			}
 		}
-		syncPeers()
+		reqNodeListSilent()
 		//fmt.Println(backgrAnnonceList())
 
 	}()
-
 	log.Fatal(run())
-
 }
 
 //fmt.Println(input)
