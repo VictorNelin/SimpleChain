@@ -65,6 +65,7 @@ func addNode(newNode string) bool {
 	return true
 }
 func addListNodes(newNodeList []string) []string {
+
 	return removeDuplicates(append(nodeList, newNodeList...))
 }
 
@@ -108,18 +109,22 @@ func getAliveNodes(checkNodeList []string) []string {
 			if err != nil {
 				//Cut a dead Node from a Node list
 				log.Println("Node : " + enlistNode + " is dead and would be deleted from a Alive Node list.")
+				nodeList = cutSlice(nodeList, enlistNode)
 				availableNodes = cutSlice(availableNodes, enlistNode)
-				break
+				log.Println("Availible nodes", availableNodes)
+				return availableNodes
 
 			}
 
 			var recivedM Message
 			if err := res.Body.FromJsonTo(&recivedM); err != nil {
+				nodeList = cutSlice(nodeList, enlistNode)
 				availableNodes = cutSlice(availableNodes, enlistNode)
 				fmt.Println(err)
 			}
 			if recivedM.Data != "True" {
 				log.Println("Node : " + enlistNode + " is not response correct to Alive request and would be deleted from a Alive Node list.")
+				nodeList = cutSlice(nodeList, enlistNode)
 				availableNodes = cutSlice(availableNodes, enlistNode)
 			}
 
@@ -139,6 +144,7 @@ func reqNodeList(reqList []string) {
 	//Try to send a request to all enlisted Nodes
 	for _, enlistNode := range removeDuplicates(reqList) {
 		if enlistNode != nodeIP {
+			trig := 0
 			goreq.SetConnectTimeout(100 * time.Millisecond)
 			res, err := goreq.Request{
 				Method:  "POST",
@@ -149,30 +155,44 @@ func reqNodeList(reqList []string) {
 			if err != nil {
 				//Cut a dead Node from a Node list
 				log.Println("Host: " + enlistNode + " is not responding and would be deleted from a Node list.")
-				reqList = getAliveNodes(cutSlice(reqList, enlistNode))
-				break
+				nodeList = cutSlice(nodeList, enlistNode)
+				msg.NodeAddr = cutSlice(reqList, enlistNode)
+				/* break */
+				trig = 1
 			}
-
-			var recivedM Message
-			if err := res.Body.FromJsonTo(&recivedM); err != nil {
-				reqList = getAliveNodes(cutSlice(reqList, enlistNode))
-				fmt.Println(err)
+			if trig != 1 {
+				var recivedM Message
+				if err := res.Body.FromJsonTo(&recivedM); err != nil {
+					nodeList = cutSlice(nodeList, enlistNode)
+					msg.NodeAddr = cutSlice(reqList, enlistNode)
+					fmt.Println(err)
+				}
+				log.Println("Answer from: ", enlistNode, ". ", recivedM.NodeAddr)
+				nodeList = addListNodes(recivedM.NodeAddr)
 			}
-			log.Println("Answer from: ", enlistNode, ". ", recivedM.NodeAddr)
-			nodeList = addListNodes(recivedM.NodeAddr)
 		}
 	}
 
 }
 
+func addDefaultNodes() {
+
+	addNode("192.168.100.9:8080")
+	addNode("192.168.100.7:8080")
+	addNode("192.168.100.2:8080")
+	addNode("192.168.100.6:8080")
+}
+
 func reqNodeListSilent() {
 
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(time.Second * 60)
 
 	for t := range ticker.C {
 		fmt.Println("Silent Node discovering", t)
+		addDefaultNodes()
 		reqNodeList(getAliveNodes(nodeList))
 		log.Println("Current node list: ", nodeList)
+
 	}
 	time.Sleep(time.Second * 80000)
 	/* ticker.Stop()
@@ -411,9 +431,9 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 
 		log.Println("Responding to: " + r.RemoteAddr)
 		var respMsg Message
-		respMsg.NodeAddr = nodeList
+		respMsg.NodeAddr = nodeList // send only alive nodes?
 
-		nodeList = addListNodes(m.NodeAddr)
+		nodeList = addListNodes(getAliveNodes(m.NodeAddr))
 		log.Println("Nodes has been recieved : ", m.NodeAddr)
 		respondWithJSON(w, r, http.StatusCreated, respMsg)
 
@@ -458,7 +478,7 @@ func main() {
 	go func() {
 		//Bootstrap Nodes
 		addNode(nodeIP)
-		addNode("192.168.100.2:8080")
+		addDefaultNodes()
 		//Discovering an interfaces
 		host, _ := os.Hostname()
 		addrs, _ := net.LookupIP(host)

@@ -145,7 +145,7 @@ func main() {
 			fmt.Println(string(encMsgJSON))
 
 			//send
-			req, err := http.NewRequest("POST", "http://192.168.100.2:8080", bytes.NewBuffer(encMsgJSON))
+			req, err := http.NewRequest("POST", "http://192.168.100.9:8080", bytes.NewBuffer(encMsgJSON))
 			req.Header.Set("Content-Type", "application/json")
 			client := &http.Client{}
 			resp, err := client.Do(req)
