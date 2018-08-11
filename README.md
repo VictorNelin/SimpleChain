@@ -5,7 +5,7 @@ The SimpleChain demonstrate a basics of blockchain technology. You could easily 
 # Features
 - [x] SHA256 hashing
 - [x] RSA 2048 Client's message encryption
-- [x] SDP or interconnection between nodes (20%)
+- [x] SDP or interconnection between nodes 
 - [x] JSON checking tool (genM)
 - [ ] Storing blockchain data at DB
 - [ ] Front-End Html
@@ -34,7 +34,7 @@ type Block struct {
 ```
 # As a Client
 In accordance to a SimpleChain' JSON structure you should use only 3 parameters to send your data to a SimpleChain:
-- Type (client)
+- Type (Client)
 - Data (Raw or encrypted with your PrivateKey)
 - PubKey (Nothing or your PublicKey at `PemString` to encrypt next message for you)
 
