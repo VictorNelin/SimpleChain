@@ -5,7 +5,7 @@ The SimpleChain demonstrate a basics of blockchain technology. You could easily 
 # Features
 - [x] SHA256 hashing
 - [x] RSA 2048 Client's message encryption
-- [x] SDP or interconnection between nodes (20%)
+- [x] SDP or interconnection between nodes
 - [x] JSON checking tool (genM)
 - [ ] Storing blockchain data at DB
 - [ ] Front-End Html
